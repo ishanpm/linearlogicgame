@@ -625,7 +625,7 @@ class LogicOperator {
     }
     
     if (this.label && this.children.length === 0) {
-      ctx.fillStyle = "black";
+      ctx.fillStyle = this.type.text;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "1px sans-serif"
@@ -1008,7 +1008,7 @@ class LogicBoard {
         var newOp2 = new LogicOrnament(this);
         newOp2.x = x+0.1;
         newOp2.y = y+0.1;
-        newOp2.type = operatorTypes.mirror;
+        newOp2.type = operatorTypes.neg;
         target.addChild(newOp);
         newOp.addOrnament(newOp2);
         this.mirrorAdd = newOp;
