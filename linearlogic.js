@@ -960,8 +960,6 @@ class LogicBoard {
       // Works under negatives
       if (target.i == 0) {
         // First slot: dualize operator
-        // Can't dualize atom
-        if (!target.parent.type.hasChildren) return;
         
         target.parent.type = operatorTypes[target.parent.type.dual];
         for (var k=0; k<target.parent.children.length; k++) {
