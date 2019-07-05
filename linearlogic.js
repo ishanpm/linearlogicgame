@@ -2,6 +2,22 @@ var canvas = $("#canvas")
 
 var ctx = canvas[0].getContext("2d")
 
+var operatorTypes = {
+  label: {fill: "white", stroke: "black", basicOperator: true, text: "black", dual: "invlabel"},
+  invlabel: {fill: "black", stroke: "white",basicOperator: true, text: "white", dual: "label"},
+  free: {fill: "#cfc", stroke: "black", hasChildren: true,  text: "black", dashed: true},
+  mirror: {fill: "transparent", stroke: "white", hasChildren: true,  text: "white", dashed: true},
+  mulcon: {fill: "white", stroke: "#aaa", hasChildren: true, basicOperator: true, hideStroke: true, text: "black", dual: "muldis"},
+  muldis: {fill: "black", stroke: "#555", hasChildren: true,  basicOperator: true, hideStroke: true, text: "white", dual: "mulcon"},
+  addcon: {fill: "red", stroke: "#800", hasChildren: true,  basicOperator: true, hideStroke: true, text: "white", dual: "adddis"},
+  adddis: {fill: "blue", stroke: "#008", hasChildren: true,  basicOperator: true, hideStroke: true, text: "white", dual: "addcon"},
+  neg: {isOrnament: true, fill: "black", stroke: "#555", text: "white", label: "~"},
+  posexp: {isOrnament: true, fill: "red", stroke: "#800", text: "white", label: "!", dual: "negexp"},
+  negexp: {isOrnament: true, fill: "blue", stroke: "#008", text: "white", label: "?", dual: "posexp"},
+}
+
+var oldTypes = [operatorTypes.label, operatorTypes.mulcon, operatorTypes.muldis, operatorTypes.addcon, operatorTypes.adddis, operatorTypes.neg, operatorTypes.posexp, operatorTypes.negexp, operatorTypes.free, operatorTypes.mirror]
+
 function doResize() {
   // Save width and height to ctx for easy access in draw functions
   ctx.width =canvas[0].width=$(window).width()
@@ -32,21 +48,23 @@ class LogicToolbar {
     this.root = root;
     this.cursorx = 0;
     this.icons = [];
+    this.iconTypes = [operatorTypes.label, operatorTypes.mulcon, operatorTypes.muldis, operatorTypes.addcon, operatorTypes.adddis, operatorTypes.neg, operatorTypes.posexp, operatorTypes.negexp];
+    var iconTypes = this.iconTypes;
     
     // Build icons
-    for (var i=0; i<8; i++) {
+    for (var i=0; i<iconTypes.length; i++) {
       this.icons[i] = new LogicOperator(this.root);
       
-      if (i < 5) {
-        this.icons[i].type = i;
+      if (!iconTypes[i].isOrnament) {
+        this.icons[i].type = iconTypes[i];
       } else {
-        this.icons[i].type = 1;
+        this.icons[i].type = operatorTypes.mulcon;
         var newOp = new LogicOrnament(this.root);
-        newOp.type = i
+        newOp.type = iconTypes[i]
         this.icons[i].addOrnament(newOp);
       }
       
-      if (i == 0) {
+      if (iconTypes[i] === operatorTypes.label) {
         this.icons[i].label = "a";
       }
     }
@@ -210,7 +228,7 @@ class LogicOrnament {
     this.dist = 0;
     this.th = 0;
     this.i = 0;
-    this.type = 5;
+    this.type = operatorTypes.neg;
   }
   
   copy(newParent) {
@@ -262,7 +280,7 @@ class LogicOrnament {
   underNegative() {
     var i = this.parent.ornaments.indexOf(this) + 1;
     for (; i<this.parent.ornaments.length; i++) {
-      if (this.parent.ornaments[i].type == 5) {
+      if (this.parent.ornaments[i].type == operatorTypes.mulcon) {
         return true;
       }
     }
@@ -280,15 +298,15 @@ class LogicOrnament {
   }
   
   draw(ctx, ox, oy) {
-    ctx.fillStyle = ["black","red","blue"][this.type - 5];
-    ctx.strokeStyle = ["#555","#a00","#008"][this.type - 5]
+    ctx.fillStyle = this.type.fill;
+    ctx.strokeStyle = this.type.stroke;
     
     ctx.fillCirc(this.x + ox, this.y + oy, this.r)
     ctx.stroke();
     
-    var symbol = ["~","!","?"][this.type-5]
+    var symbol = this.type.label
     if (symbol) {
-      ctx.fillStyle = "white";
+      ctx.fillStyle = this.type.text;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "0.8px sans-serif"
@@ -307,7 +325,7 @@ class LogicOperator {
     this.x = 0;
     this.y = 0;
     this.r = 0;
-    this.type = 0;
+    this.type = operatorTypes.label;
     this.label = null;
     this.isOrnament = false;
     // x and y for next tick
@@ -431,7 +449,7 @@ class LogicOperator {
   // Returns true if this or any ancestor has a negative ornament
   underNegative() {
     for (var i=0; i<this.ornaments.length; i++) {
-      if (this.ornaments[i].type === 5) {
+      if (this.ornaments[i].type === operatorTypes.neg) {
         return true;
       }
     }
@@ -465,9 +483,9 @@ class LogicOperator {
     }
     
     if (neg) {
-      // Check is last ornament is negative (type=5)
-      if (this.ornaments[len+1] && this.ornaments[len+1].type !== 5) return false;
-      if (other.ornaments[len+1] && other.ornaments[len+1].type !== 5) return false;
+      // Check is last ornament is negative
+      if (this.ornaments[len+1] && this.ornaments[len+1].type !== operatorTypes.neg) return false;
+      if (other.ornaments[len+1] && other.ornaments[len+1].type !== operatorTypes.neg) return false;
     }
     
     // Children must match in any order
@@ -592,12 +610,12 @@ class LogicOperator {
   }
   
   draw(ctx, ox, oy) {
-    ctx.fillStyle = ["white","white","black","red","blue",null,null,null,"#cfc","transparent"][this.type]
+    ctx.fillStyle = this.type.fill;
     ctx.fillCirc(this.x + ox, this.y + oy, this.r);
     
-    if (this.type === this. parent.type || this.type === 0 || this.type == 8 || this.type == 9 || (this.type === 1 && this.parent.type === 8)) {
-      ctx.strokeStyle = ["black","#aaa","#555","#800","#008",null,null,null,"black","white","black"][this.type]
-      if (this.type === 8 || this.type === 9) {
+    if (this.type === this.parent.type || !(this.type.hideStroke) || (this.type === operatorTypes.mulcon && this.parent.type === operatorTypes.free)) {
+      ctx.strokeStyle = this.type.stroke
+      if (this.type.dashed) {
         ctx.setLineDash([0.5,0.2]);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -655,13 +673,13 @@ class LogicBoard {
     this.dragTarget = null;
     this.dragStartX = 0;
     this.dragStartY = 0;
-    // The board acts as a type 1 operator for most purposes
-    this.type = 1;
+    // The board acts as a multiplicative conjunction operator for most purposes
+    this.type = operatorTypes.mulcon;
     
     this.toolbar = new LogicToolbar(this);
     
     this.addChild(new LogicOperator(this));
-    this.children[0].type = 4;
+    this.children[0].type = operatorTypes.adddis;
   }
   
   toScreenPos(x,y) {
@@ -784,10 +802,10 @@ class LogicBoard {
             target.children[0].addOrnament(target.ornaments[0])
           }
           target.popOperator();
-        } else if (!target.isOrnament && target.type === target.parent.type && target.ornaments.length == 0&& !inNegative) {
+        } else if (!target.isOrnament && target.type === target.parent.type && target.ornaments.length == 0 && !inNegative) {
           // Pop circles that match their parents
           target.popOperator();
-        } else if (!target.isOrnament && target.parent.type == 3 && !target.parent.underNegative()) {
+        } else if (!target.isOrnament && target.parent.type == operatorTypes.addcon && !target.parent.underNegative()) {
           // Additive conjunction delete
           target.parent.removeChild(target);
         }
@@ -804,14 +822,14 @@ class LogicBoard {
             var newOp = new LogicOrnament(this);
             newOp.x = x;
             newOp.y = y;
-            newOp.type = 5;
+            newOp.type = operatorTypes.neg;
             target.addOrnament(newOp,index);
           }
         } else if (inNegative) {
           // Can't add anything else under a negative
           return;
         } else if (this.addType == 0) {
-          if (!target.isOrnament && target.type > 0 && target.type <=4) {
+          if (target.type.basicOperator && target.type.hasChildren) {
             // Create a "hollow" operator
             var newOp = new LogicOperator(this);
             newOp.x = x;
@@ -832,7 +850,7 @@ class LogicBoard {
             var pos = target.fromRelativePos(0,0)
             newOp.x = pos[0];
             newOp.y = pos[1];
-            newOp.type = this.addType;
+            newOp.type = oldTypes[this.addType];
             newOp.r = target.r;
             target.parent.addChild(newOp);
             newOp.addChild(target);
@@ -849,6 +867,8 @@ class LogicBoard {
         this.dragTarget = target;
       }
     } else if (!inFreeAdd) {
+      // Exit free construct mode
+      
       var copy;
       if (this.mirrorAdd) {
         copy = this.freeAdd.copy(this);
@@ -860,14 +880,14 @@ class LogicBoard {
         if (this.freeAdd.children.length == 0) {
           this.mirrorAdd.type = this.mirrorAdd.parent.type;
         } else {
-          this.mirrorAdd.type = 1;
+          this.mirrorAdd.type = operatorTypes.mulcon;
         }
       }
       
-      if (this.freeAdd.parent.type == 1 || this.freeAdd.children.length < 2) {
+      if (this.freeAdd.parent.type == operatorTypes.mulcon || this.freeAdd.children.length < 2) {
         this.freeAdd.popOperator();
       } else {
-        this.freeAdd.type = 1;
+        this.freeAdd.type = operatorTypes.mulcon;
       }
       
       this.freeAdd = null;
@@ -883,7 +903,7 @@ class LogicBoard {
           }
         }
       } else if (this.mode == "add") {
-        if (this.addType >= 5 && this.addType <= 7) {
+        if (oldTypes[this.addType].isOrnament) {
           if (target !== this && target !== this.freeAdd) {
             // Create an ornament
             var index = 0;
@@ -895,15 +915,15 @@ class LogicBoard {
             var newOp = new LogicOrnament(this);
             newOp.x = x;
             newOp.y = y;
-            newOp.type = this.addType
+            newOp.type = oldTypes[this.addType];
             target.addOrnament(newOp,index);
           }
-        } else if (this.addType >= 0 && this.addType <= 4 && !target.isOrnament && target.type !== 0) {
+        } else if (oldTypes[this.addType].basicOperator && target.type.hasChildren) {
           // Create an operator
           var newOp = new LogicOperator(this);
           newOp.x = x;
           newOp.y = y;
-          newOp.type = this.addType;
+          newOp.type = oldTypes[this.addType];
           if (this.addType == 0) {
             newOp.label = this.addLabel;
           }
@@ -935,15 +955,15 @@ class LogicBoard {
       }
     }
     
-    if (dragTarget === target && dragTarget.type === 5) {
+    if (dragTarget === target && dragTarget.type === operatorTypes.neg) {
       // Negation ornament click
       // Works under negatives
       if (target.i == 0) {
         // First slot: dualize operator
         // Can't dualize atom
-        if (target.parent.type == 0) return;
+        if (!target.parent.type.hasChildren) return;
         
-        target.parent.type = [2,1,4,3][target.parent.type - 1];
+        target.parent.type = operatorTypes[target.parent.type.dual];
         for (var k=0; k<target.parent.children.length; k++) {
           var newOp = new LogicOrnament(this);
           newOp.parent = target.parent;
@@ -952,14 +972,14 @@ class LogicBoard {
           target.parent.children[k].addOrnament(newOp);
         }
         target.parent.removeOrnament(target);
-      } else if (target.parent.ornaments[target.i-1].type == 5) {
+      } else if (target.parent.ornaments[target.i-1].type == operatorTypes.neg) {
         // Dualize negative (delete double negative)
         target.parent.removeOrnament(target);
         target.parent.removeOrnament(target.parent.ornaments[target.i-1]);
       } else {
         // Dualize ornament
         var other = target.parent.ornaments[target.i-1];
-        other.type = [7,6][other.type - 6]
+        other.type = operatorTypes[other.type.dual]
         target.parent.addOrnament(target,target.i-1)
       }
     }
@@ -969,14 +989,14 @@ class LogicBoard {
       // None of these work under negatives
       if (target.underNegative()) return;
       
-      if (target.type === 1 && this.mode == "action" && target.children.length == 0) {
+      if (target.type === operatorTypes.mulcon && this.mode == "action" && target.children.length == 0) {
         // Init rule
         // Add a freeAdd zone
-        target.type = 2;
+        target.type = operatorTypes.muldis;
         var newOp = new LogicOperator(this);
         newOp.x = x;
         newOp.y = y;
-        newOp.type = 8;
+        newOp.type = operatorTypes.free;
         target.addChild(newOp);
         this.freeAdd = newOp;
         
@@ -984,21 +1004,21 @@ class LogicBoard {
         newOp = new LogicOperator(this);
         newOp.x = x+0.1;
         newOp.y = y+0.1;
-        newOp.type = 9;
+        newOp.type = operatorTypes.mirror;
         var newOp2 = new LogicOrnament(this);
         newOp2.x = x+0.1;
         newOp2.y = y+0.1;
-        newOp2.type = 5;
+        newOp2.type = operatorTypes.mirror;
         target.addChild(newOp);
         newOp.addOrnament(newOp2);
         this.mirrorAdd = newOp;
       }
-      if (target.type === 4 && this.mode == "action") {
+      if (target.type === operatorTypes.adddis && this.mode == "action") {
         // Additive disjunction click
         var newOp = new LogicOperator(this);
         newOp.x = x;
         newOp.y = y;
-        newOp.type = 8;
+        newOp.type = operatorTypes.free;
         target.addChild(newOp);
         this.freeAdd = newOp;
       }
@@ -1011,7 +1031,7 @@ class LogicBoard {
         var pos = target.toRelativePos(x,y)
         dragTarget.nx = pos[0];
         dragTarget.ny = pos[1];
-      } else if (dragTarget.parent.type == 2 && dragTarget.parent.ornaments.length === 0 && target.parent.type == 2 && target.parent.ornaments.length === 0 && dragTarget.parent !== target.parent && dragTarget.parent.parent === target.parent.parent && dragTarget.parent.parent.type == 1 && !target.parent.underNegative()) {
+      } else if (dragTarget.parent.type == operatorTypes.muldis && dragTarget.parent.ornaments.length === 0 && target.parent.type == operatorTypes.muldis && target.parent.ornaments.length === 0 && dragTarget.parent !== target.parent && dragTarget.parent.parent === target.parent.parent && dragTarget.parent.parent.type == operatorTypes.mulcon && !target.parent.underNegative()) {
         // Join rule (alternative to cut)
         target.parent.addChild(dragTarget.parent)
         dragTarget.parent.popOperator();
@@ -1019,37 +1039,37 @@ class LogicBoard {
         var pos = target.fromRelativePos(0,0);
         newOp.x = pos[0];
         newOp.y = pos[1];
-        newOp.type = 1;
+        newOp.type = operatorTypes.mulcon;
         target.parent.addChild(newOp);
         newOp.addChild(dragTarget);
         newOp.addChild(target);
-      } else if (dragTarget.parent == target && !dragTarget.isOrnament && target.type == 3 && !target.underNegative()) {
+      } else if (dragTarget.parent == target && !dragTarget.isOrnament && target.type == operatorTypes.addcon && !target.underNegative()) {
         // Additive conjunction duplicate
         var copy = dragTarget.copy(target);
         var pos = target.toRelativePos(x,y);
         copy.x = pos[0];
         copy.y = pos[1];
         target.addChild(copy);
-      } else if (dragTarget.parent == target.parent && !dragTarget.isOrnament && target.parent.type == 4 && !target.parent.underNegative() && dragTarget.equals(target)) {
+      } else if (dragTarget.parent == target.parent && !dragTarget.isOrnament && target.parent.type == operatorTypes.adddis && !target.parent.underNegative() && dragTarget.equals(target)) {
         // Additive disjunction unduplicate
         target.parent.removeChild(dragTarget);
       } else if (dragTarget.equals(target, true)) {
         // Cut rules
         /*
-        if (dragTarget.parent.type == 2 && dragTarget.parent.ornaments.length === 0 && target.parent.type == 2 && target.parent.ornaments.length === 0 && dragTarget.parent !== target.parent && dragTarget.parent.parent === target.parent.parent && dragTarget.parent.parent.type == 1 && !target.parent.underNegative()) {
+        if (dragTarget.parent.type == operatorTypes.muldis && dragTarget.parent.ornaments.length === 0 && target.parent.type == operatorTypes.muldis && target.parent.ornaments.length === 0 && dragTarget.parent !== target.parent && dragTarget.parent.parent === target.parent.parent && dragTarget.parent.parent.type == operatorTypes.mulcon && !target.parent.underNegative()) {
           target.parent.addChild(dragTarget.parent)
           dragTarget.parent.popOperator();
           target.parent.removeChild(dragTarget);
           target.parent.removeChild(target);
-        } else if (dragTarget.parent.type == 1 && target.parent.type == 2 && target.parent.ornaments.length === 0 && dragTarget.parent === target.parent.parent && !dragTarget.parent.underNegative()) {
+        } else if (dragTarget.parent.type == operatorTypes.mulcon && target.parent.type == operatorTypes.muldis && target.parent.ornaments.length === 0 && dragTarget.parent === target.parent.parent && !dragTarget.parent.underNegative()) {
           dragTarget.parent.removeChild(dragTarget)
           target.parent.removeChild(target);
-        } else */if (dragTarget.parent.type == 1 && dragTarget.parent === target.parent && !dragTarget.parent.underNegative()) {
+        } else */if (dragTarget.parent.type == operatorTypes.mulcon && dragTarget.parent === target.parent && !dragTarget.parent.underNegative()) {
           var newOp = new LogicOperator(this);
           var pos = target.fromRelativePos(0,0);
           newOp.x = pos[0];
           newOp.y = pos[1];
-          newOp.type = 2;
+          newOp.type = operatorTypes.muldis;
           newOp.r = target.r;
           target.parent.addChild(newOp);
           dragTarget.parent.removeChild(dragTarget)
