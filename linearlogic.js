@@ -647,6 +647,399 @@ class LogicOperator {
   }
 }
 
+class MoveInterpreter {
+  constructor(root) {
+    this.root = root;
+  }
+  
+  interpretClick(mode, target, x, y, type) {
+    var inNegative = (target !== this.root && target.underNegative(this.root))
+    
+    if (mode == "delete") {
+      // Delete
+      
+      // Can't delete anything under a negative, or the base
+      if (inNegative || target === this.root) return true;
+      
+      if (!target.isOrnament && target.children.length == 1) {
+        // Flatten circles with one child
+        this.performMove("unwrap", target, null, x, y);
+      } else if (!target.isOrnament && target.type === target.parent.type && target.ornaments.length == 0) {
+        // Pop circles that match their parents
+        this.performMove("pop", target, null, x, y);
+      } else if (!target.isOrnament && target.parent.type == operatorTypes.addcon) {
+        // Additive conjunction delete
+        this.performMove("select", target, null, x, y);
+      } else if (target.type == operatorTypes.posexp) {
+        // Demote ! exponential
+        this.performMove("demote", target, null, x, y);
+      } else if (target.type == operatorTypes.negexp) {
+        let hasExp = true;
+        
+        if (target.i == 0) {
+          // All children must have ? ornaments and parent must be muldis
+          if (target.parent.type == operatorTypes.muldis) {
+            for (let c of target.parent.children) {
+              if (c.ornaments.length < 1 || c.ornaments[c.ornaments.length-1].type !== operatorTypes.negexp) {
+                hasExp = false;
+                break;
+              }
+            }
+          } else {
+            hasExp = false;
+          }
+        } else {
+          // Next ornament must be ? ornament
+          hasExp = (target.parent.ornaments[target.i-1].type == operatorTypes.negexp);
+        }
+        
+        if (hasExp) {
+          // Dig ? exponential
+          this.performMove("dig", target, null, x, y);
+        }
+      }
+      return true;
+    } else if (mode == "add") {
+      if (type === operatorTypes.neg) {
+        // Double negative
+        this.performMove("doublenegate", target, null, x, y);
+      } else if (!inNegative) {
+        // Can't add anything else under a negative
+        if (type === operatorTypes.label) {
+          if (target.type.basicOperator && target.type.hasChildren) {
+            // Create a unit
+            this.performMove("unit", target, null, x, y);
+          }
+        } else if (type === operatorTypes.posexp) {
+          let hasExp = true;
+          
+          if (!target.isOrnament) {
+            // All children must have ! ornaments and target must be mulcon
+            if (target.type == operatorTypes.mulcon) {
+              for (let c of target.children) {
+                if (c.ornaments.length < 1 || c.ornaments[c.ornaments.length-1].type !== operatorTypes.posexp) {
+                  hasExp = false;
+                  break;
+                }
+              }
+            } else {
+              hasExp = false;
+            }
+          } else {
+            // Target must be ! ornament
+            hasExp = (target.type == operatorTypes.posexp);
+          }
+          
+          if (hasExp) {
+            // Dig ? exponential
+            this.performMove("bury", target, null, x, y);
+          }
+        } else if (type === operatorTypes.negexp) {
+          // Promote ? exponential
+          this.performMove("promote", target, null, x, y);
+        } else if (type.basicOperator) {
+          // Wrap the target with addType
+          if (target !== this.root) {
+            this.performMove("wrap", target, null, x, y, type);
+          }
+        }
+      }
+      return true;
+    } else {
+      return false;
+    }
+  }
+  
+  interpretDrag(mode, src, dest, x, y) {
+    if (src === dest && src.type === operatorTypes.neg) {
+      // Negation ornament click
+      // Works under negatives
+      this.performMove("negate", src, null, x, y);
+    }
+    
+    if (src === dest && mode == "action") {
+      // Click actions
+      // None of these work under negatives
+      if (src.underNegative()) return false;
+      
+      if (mode == "action") {
+        if (src.type === operatorTypes.mulcon && src.children.length == 0) {
+          // Init rule
+          this.performMove("split", src, null, x, y);
+        } else if (src.type === operatorTypes.muldis && src.children.length == 0) {
+          // Create ? rule
+          this.performMove("create", src, null, x, y);
+        } else if (src.type === operatorTypes.adddis) {
+          // Additive disjunction click
+          this.performMove("unselect", src, null, x, y);
+        } else if (src.type === operatorTypes.posexp) {
+          // Destroy ! rule
+          this.performMove("destroy", src, null, x, y);
+        }
+      }
+      return true;
+    } else if (!src.isOrnament && !dest.isOrnament && mode == "action") {
+      // Drag actions
+      if (dest.parent == src.parent && dest.type == dest.parent.type && dest.ornaments.length == 0 && !dest.underNegative()) {
+        // Associative law
+        this.performMove("transpose", src, dest, x, y);
+      } else if (src.parent.type === operatorTypes.mulcon && dest.parent.type === operatorTypes.muldis && dest.parent.ornaments.length === 0 && src.parent === dest.parent.parent && !dest.parent.underNegative()) {
+        // Insert rule (alternative to cut)
+        this.performMove("insert", src, dest, x, y);
+      } else if (src.parent === dest && !src.isOrnament && !dest.underNegative()) {
+        if (dest.type == operatorTypes.addcon) {
+          // Additive conjunction copy
+          this.performMove("copy", src, dest, x, y);
+        } else if (src.parent.type == operatorTypes.mulcon && src.ornaments.length > 0 && src.ornaments[src.ornaments.length-1].type == operatorTypes.posexp) {
+          // Additive conjunction copy
+          this.performMove("duplicate", src, dest, x, y);
+        }
+      } else if (src.parent === dest.parent && !src.isOrnament && !dest.isOrnament && !dest.parent.underNegative() && src.equals(dest)) {
+        if (src.parent.type === operatorTypes.adddis) {
+          // Additive disjunction uncopy
+          this.performMove("uncopy", src, dest, x, y);
+        } else if (src.parent.type == operatorTypes.muldis && src.ornaments.length > 0 && src.ornaments[src.ornaments.length-1].type == operatorTypes.negexp) {
+          // ? exponential unduplicate
+          this.performMove("unduplicate", src, dest, x, y);
+        }
+      } else if (src.equals(dest, true)) {
+        if (src.parent.type == operatorTypes.mulcon && src.parent === dest.parent && !src.parent.underNegative()) {
+          // Merge rule
+          this.performMove("merge", src, dest, x, y);
+        }
+      }
+      return true;
+    }
+    
+    return false;
+  }
+  
+  performMove(move, src, dest, x, y, type) {
+    let pos, newOp, newOp2, other, copy, index;
+    
+    switch (move) {
+      case "unit": // Create an empty operator matching src
+        newOp = new LogicOperator(this.root);
+        newOp.x = x;
+        newOp.y = y;
+        newOp.type = src.type;
+        src.addChild(newOp);
+        break;
+      case "transpose": // Move src to dest
+        dest.addChild(src);
+        pos = dest.toRelativePos(x,y)
+        src.nx = pos[0];
+        src.ny = pos[1];
+        break;
+      case "pop": // Pop src
+        src.popOperator();
+        break;
+      case "wrap": // Wrap src with type
+        index = 0;
+        if (src.isOrnament) {
+          index = src.parent.ornaments.indexOf(src) + 1;
+          src = src.parent;
+        }
+        
+        newOp = new LogicOperator(this.root);
+        pos = src.fromRelativePos(0,0)
+        newOp.x = pos[0];
+        newOp.y = pos[1];
+        newOp.type = type;
+        newOp.r = src.r;
+        src.parent.addChild(newOp);
+        newOp.addChild(src);
+        
+        // Move ornaments to parent
+        while (src.ornaments.length > index) {
+          newOp.addOrnament(src.ornaments[index]);
+        }
+        break;
+      case "unwrap": // Pop src
+        // Move ornaments to child, if present
+        while (src.ornaments.length > 0) {
+          src.children[0].addOrnament(src.ornaments[0])
+        }
+        src.popOperator();
+        break;
+      case "split": // Turn src into muldis, insert a freeAdd and negated mirrorAdd
+        // Add a freeAdd zone
+        src.type = operatorTypes.muldis;
+        newOp = new LogicOperator(this.root);
+        newOp.x = x;
+        newOp.y = y;
+        newOp.type = operatorTypes.free;
+        src.addChild(newOp);
+        this.root.freeAdd = newOp;
+        
+        // Will copy to mirrorAdd zone when finished
+        newOp = new LogicOperator(this.root);
+        newOp.x = x+0.1;
+        newOp.y = y+0.1;
+        newOp.type = operatorTypes.mirror;
+        newOp2 = new LogicOrnament(this.root);
+        newOp2.x = x+0.1;
+        newOp2.y = y+0.1;
+        newOp2.type = operatorTypes.neg;
+        src.addChild(newOp);
+        newOp.addOrnament(newOp2);
+        this.root.mirrorAdd = newOp;
+        break;
+      case "merge": // Delete src and dest, replace with a muldis unit
+        newOp = new LogicOperator(this.root);
+        pos = dest.fromRelativePos(0,0);
+        newOp.x = pos[0];
+        newOp.y = pos[1];
+        newOp.type = operatorTypes.muldis;
+        newOp.r = dest.r;
+        dest.parent.addChild(newOp);
+        src.parent.removeChild(src)
+        dest.parent.removeChild(dest);
+        break;
+      case "insert": // Insert src into a mulcon with dest
+        newOp = new LogicOperator(this.root);
+        pos = dest.fromRelativePos(0,0);
+        newOp.x = pos[0];
+        newOp.y = pos[1];
+        newOp.type = operatorTypes.mulcon;
+        dest.parent.addChild(newOp);
+        newOp.addChild(src);
+        newOp.addChild(dest);
+        break;
+      case "negate": // Turn src's parent into its dual, distribute to children
+        if (src.i == 0) {
+          // First slot: dualize operator
+          
+          src.parent.type = operatorTypes[src.parent.type.dual];
+          for (let k=0; k<src.parent.children.length; k++) {
+            newOp = new LogicOrnament(this.root);
+            newOp.parent = src.parent;
+            newOp.x = src.x;
+            newOp.y = src.y;
+            newOp.type = operatorTypes.neg;
+            src.parent.children[k].addOrnament(newOp);
+          }
+          src.parent.removeOrnament(src);
+        } else if (src.parent.ornaments[src.i-1].type == operatorTypes.neg) {
+          // Dualize negative (delete double negative)
+          src.parent.removeOrnament(src);
+          src.parent.removeOrnament(src.parent.ornaments[src.i-1]);
+        } else {
+          // Dualize ornament
+          other = src.parent.ornaments[src.i-1];
+          other.type = operatorTypes[other.type.dual]
+          src.parent.addOrnament(src,src.i-1)
+        }
+        break;
+      case "doublenegate": // Create two neg ornaments on src
+        index = 0;
+        if (src.isOrnament) {
+          // You can negate ornaments too
+          index = src.parent.ornaments.indexOf(src)+1;
+          src = src.parent;
+        }
+        for (let i=0; i<2; i++) {
+          newOp = new LogicOrnament(this.root);
+          newOp.x = x;
+          newOp.y = y;
+          newOp.type = operatorTypes.neg;
+          src.addOrnament(newOp,index);
+        }
+        break;
+      case "select": // Delete src
+        src.parent.removeChild(src);
+        break;
+      case "unselect": // Create freeAdd in src
+        newOp = new LogicOperator(this.root);
+        newOp.x = x;
+        newOp.y = y;
+        newOp.type = operatorTypes.free;
+        src.addChild(newOp);
+        this.root.freeAdd = newOp;
+        break;
+      case "copy": // Copy src to dest
+        copy = src.copy(dest);
+        pos = dest.toRelativePos(x,y);
+        copy.x = pos[0];
+        copy.y = pos[1];
+        dest.addChild(copy);
+        break;
+      case "uncopy": // Delete src
+        src.parent.removeChild(src);
+        break;
+      case "destroy": // Replace src's parent with mulcon unit
+        src.parent.type = operatorTypes.mulcon
+        src.parent.label = null;
+        index = src.parent.ornaments.length - src.parent.ornaments.indexOf(src) - 1;
+        
+        while (src.parent.children.length > 0) {
+          src.parent.removeChild(src.parent.children[0]);
+        }
+        while (src.parent.ornaments.length > index) {
+          src.parent.removeOrnament(src.parent.ornaments[0]);
+        }
+        break;
+      case "create": // Replace src with freeAdd, add ? ornament
+        src.type = operatorTypes.free;
+        this.root.freeAdd = src;
+        while (src.children.length > 0) {
+          src.removeChild(src.children[0]);
+        }
+        newOp = new LogicOrnament(this.root);
+        newOp.parent = src;
+        newOp.x = src.x;
+        newOp.y = src.y;
+        newOp.type = operatorTypes.negexp;
+        src.addOrnament(newOp);
+        break;
+      case "duplicate": // Copy src's parent to dest
+        copy = src.copy(dest);
+        pos = dest.toRelativePos(x,y);
+        copy.x = pos[0];
+        copy.y = pos[1];
+        dest.addChild(copy);
+        break;
+      case "unduplicate": // Delete src
+        src.parent.removeChild(src)
+        break;
+      case "demote": // Delete src
+        src.parent.removeOrnament(src)
+        break;
+      case "promote": // Add ? ornament on src
+        index = 0;
+        if (src.isOrnament) {
+          // You can bury ornaments too
+          index = src.parent.ornaments.indexOf(src)+1;
+          src = src.parent;
+        }
+        newOp = new LogicOrnament(this.root);
+        newOp.parent = src;
+        newOp.x = src.x;
+        newOp.y = src.y;
+        newOp.type = operatorTypes.negexp;
+        src.addOrnament(newOp, index);
+        break;
+      case "bury": // Add ! ornament on src
+        index = 0;
+        if (src.isOrnament) {
+          // You can bury ornaments too
+          index = src.parent.ornaments.indexOf(src)+1;
+          src = src.parent;
+        }
+        newOp = new LogicOrnament(this.root);
+        newOp.parent = src;
+        newOp.x = src.x;
+        newOp.y = src.y;
+        newOp.type = operatorTypes.posexp;
+        src.addOrnament(newOp, index);
+        break;
+      case "dig": // Delete src
+        src.parent.removeOrnament(src)
+        break;
+    }
+  }
+}
+
 class LogicBoard {
   constructor() {
     this.children = []
@@ -666,7 +1059,7 @@ class LogicBoard {
     this.scale = 20;
     // freeAdd circle allows free construction inside it
     this.freeAdd = null;
-    // freeAdd circle copies to this circle when finished
+    // freeAdd copies to this circle when finished
     this.mirrorAdd = null;
     // Drag info
     this.inDrag = false;
@@ -677,6 +1070,7 @@ class LogicBoard {
     this.type = operatorTypes.mulcon;
     
     this.toolbar = new LogicToolbar(this);
+    this.moveInterpreter = new MoveInterpreter(this);
     
     this.addChild(new LogicOperator(this));
     this.children[0].type = operatorTypes.adddis;
@@ -788,80 +1182,12 @@ class LogicBoard {
     }
     
     var inFreeAdd = (target !== this && target.hasAncestor(this.freeAdd))
-    var inNegative = (target !== this && target.underNegative(this))
     
     if (this.freeAdd === null) {
-      if (this.mode == "delete") {
-        // Delete
-        if (target == this) {
-          // Can't delete the base
-        } else if (!target.isOrnament && target.children.length == 1 && !inNegative) {
-          // Flatten circles with one child
-          // Move ornaments to child, if present
-          while (target.ornaments.length > 0) {
-            target.children[0].addOrnament(target.ornaments[0])
-          }
-          target.popOperator();
-        } else if (!target.isOrnament && target.type === target.parent.type && target.ornaments.length == 0 && !inNegative) {
-          // Pop circles that match their parents
-          target.popOperator();
-        } else if (!target.isOrnament && target.parent.type == operatorTypes.addcon && !target.parent.underNegative()) {
-          // Additive conjunction delete
-          target.parent.removeChild(target);
-        }
-      } else if (this.mode == "add") {
-        if (this.addType == 5) {
-          // Double negative
-          var index = 0;
-          if (target.isOrnament) {
-            // You can negate ornaments too
-            index = target.parent.ornaments.indexOf(target)+1;
-            target = target.parent;
-          }
-          for (var i=0; i<2; i++) {
-            var newOp = new LogicOrnament(this);
-            newOp.x = x;
-            newOp.y = y;
-            newOp.type = operatorTypes.neg;
-            target.addOrnament(newOp,index);
-          }
-        } else if (inNegative) {
-          // Can't add anything else under a negative
-          return;
-        } else if (this.addType == 0) {
-          if (target.type.basicOperator && target.type.hasChildren) {
-            // Create a "hollow" operator
-            var newOp = new LogicOperator(this);
-            newOp.x = x;
-            newOp.y = y;
-            newOp.type = target.type;
-            target.addChild(newOp);
-          }
-        } else if (this.addType < 5) {
-          // Wrap the target with addType
-          if (target !== this) {
-            var index = 0;
-            if (target.isOrnament) {
-              index = target.parent.ornaments.indexOf(target) + 1;
-              target = target.parent;
-            }
-            
-            var newOp = new LogicOperator(this);
-            var pos = target.fromRelativePos(0,0)
-            newOp.x = pos[0];
-            newOp.y = pos[1];
-            newOp.type = oldTypes[this.addType];
-            newOp.r = target.r;
-            target.parent.addChild(newOp);
-            newOp.addChild(target);
-            
-            // Move ornaments to parent
-            while (target.ornaments.length > index) {
-              newOp.addOrnament(target.ornaments[index]);
-            }
-          }
-        }
-      } else {
+      // Click actions
+      let handled = this.moveInterpreter.interpretClick(this.mode, target, x, y, oldTypes[this.addType])
+      
+      if (!handled) {
         // Drag begin
         this.inDrag = true;
         this.dragTarget = target;
@@ -878,15 +1204,31 @@ class LogicBoard {
         this.mirrorAdd.addChild(copy);
         copy.popOperator();
         if (this.freeAdd.children.length == 0) {
+          // No chidren: Empty (imitates pop behavior of freeAdd)
           this.mirrorAdd.type = this.mirrorAdd.parent.type;
+        } else if (this.freeAdd.children.length == 1) {
+          // One child: Unwrap
+          while (this.mirrorAdd.ornaments.length > 0) {
+            this.mirrorAdd.children[0].addOrnament(this.mirrorAdd.ornaments[0]);
+          }
+          this.mirrorAdd.popOperator();
         } else {
+          // Multiple children: Default to multiplicative conjunction
           this.mirrorAdd.type = operatorTypes.mulcon;
         }
       }
       
-      if (this.freeAdd.parent.type == operatorTypes.mulcon || this.freeAdd.children.length < 2) {
+      if (this.freeAdd.children.length == 0) {
+        // No children: Pop
+        this.freeAdd.popOperator();
+      } else if (this.freeAdd.children.length == 1) {
+        // One child: Unwrap
+        while (this.freeAdd.ornaments.length > 0) {
+          this.freeAdd.children[0].addOrnament(this.freeAdd.ornaments[0]);
+        }
         this.freeAdd.popOperator();
       } else {
+        // Multiple children: Default to multiplicative conjunction
         this.freeAdd.type = operatorTypes.mulcon;
       }
       
@@ -955,127 +1297,7 @@ class LogicBoard {
       }
     }
     
-    if (dragTarget === target && dragTarget.type === operatorTypes.neg) {
-      // Negation ornament click
-      // Works under negatives
-      if (target.i == 0) {
-        // First slot: dualize operator
-        
-        target.parent.type = operatorTypes[target.parent.type.dual];
-        for (var k=0; k<target.parent.children.length; k++) {
-          var newOp = new LogicOrnament(this);
-          newOp.parent = target.parent;
-          newOp.x = target.x;
-          newOp.y = target.y;
-          target.parent.children[k].addOrnament(newOp);
-        }
-        target.parent.removeOrnament(target);
-      } else if (target.parent.ornaments[target.i-1].type == operatorTypes.neg) {
-        // Dualize negative (delete double negative)
-        target.parent.removeOrnament(target);
-        target.parent.removeOrnament(target.parent.ornaments[target.i-1]);
-      } else {
-        // Dualize ornament
-        var other = target.parent.ornaments[target.i-1];
-        other.type = operatorTypes[other.type.dual]
-        target.parent.addOrnament(target,target.i-1)
-      }
-    }
-    
-    if (dragTarget === target) {
-      // Click actions
-      // None of these work under negatives
-      if (target.underNegative()) return;
-      
-      if (target.type === operatorTypes.mulcon && this.mode == "action" && target.children.length == 0) {
-        // Init rule
-        // Add a freeAdd zone
-        target.type = operatorTypes.muldis;
-        var newOp = new LogicOperator(this);
-        newOp.x = x;
-        newOp.y = y;
-        newOp.type = operatorTypes.free;
-        target.addChild(newOp);
-        this.freeAdd = newOp;
-        
-        // Will copy to mirrorAdd zone when finished
-        newOp = new LogicOperator(this);
-        newOp.x = x+0.1;
-        newOp.y = y+0.1;
-        newOp.type = operatorTypes.mirror;
-        var newOp2 = new LogicOrnament(this);
-        newOp2.x = x+0.1;
-        newOp2.y = y+0.1;
-        newOp2.type = operatorTypes.neg;
-        target.addChild(newOp);
-        newOp.addOrnament(newOp2);
-        this.mirrorAdd = newOp;
-      }
-      if (target.type === operatorTypes.adddis && this.mode == "action") {
-        // Additive disjunction click
-        var newOp = new LogicOperator(this);
-        newOp.x = x;
-        newOp.y = y;
-        newOp.type = operatorTypes.free;
-        target.addChild(newOp);
-        this.freeAdd = newOp;
-      }
-    } else if (!dragTarget.isOrnament && !target.isOrnament) {
-      // Drag actions
-      if (target.parent == dragTarget.parent && target.type == dragTarget.parent.type && target.ornaments.length == 0 && !target.underNegative()) {
-        // Associate
-        // Doesn't work under negatives
-        target.addChild(dragTarget);
-        var pos = target.toRelativePos(x,y)
-        dragTarget.nx = pos[0];
-        dragTarget.ny = pos[1];
-      } else if (dragTarget.parent.type == operatorTypes.muldis && dragTarget.parent.ornaments.length === 0 && target.parent.type == operatorTypes.muldis && target.parent.ornaments.length === 0 && dragTarget.parent !== target.parent && dragTarget.parent.parent === target.parent.parent && dragTarget.parent.parent.type == operatorTypes.mulcon && !target.parent.underNegative()) {
-        // Join rule (alternative to cut)
-        target.parent.addChild(dragTarget.parent)
-        dragTarget.parent.popOperator();
-        var newOp = new LogicOperator(this);
-        var pos = target.fromRelativePos(0,0);
-        newOp.x = pos[0];
-        newOp.y = pos[1];
-        newOp.type = operatorTypes.mulcon;
-        target.parent.addChild(newOp);
-        newOp.addChild(dragTarget);
-        newOp.addChild(target);
-      } else if (dragTarget.parent == target && !dragTarget.isOrnament && target.type == operatorTypes.addcon && !target.underNegative()) {
-        // Additive conjunction duplicate
-        var copy = dragTarget.copy(target);
-        var pos = target.toRelativePos(x,y);
-        copy.x = pos[0];
-        copy.y = pos[1];
-        target.addChild(copy);
-      } else if (dragTarget.parent == target.parent && !dragTarget.isOrnament && target.parent.type == operatorTypes.adddis && !target.parent.underNegative() && dragTarget.equals(target)) {
-        // Additive disjunction unduplicate
-        target.parent.removeChild(dragTarget);
-      } else if (dragTarget.equals(target, true)) {
-        // Cut rules
-        /*
-        if (dragTarget.parent.type == operatorTypes.muldis && dragTarget.parent.ornaments.length === 0 && target.parent.type == operatorTypes.muldis && target.parent.ornaments.length === 0 && dragTarget.parent !== target.parent && dragTarget.parent.parent === target.parent.parent && dragTarget.parent.parent.type == operatorTypes.mulcon && !target.parent.underNegative()) {
-          target.parent.addChild(dragTarget.parent)
-          dragTarget.parent.popOperator();
-          target.parent.removeChild(dragTarget);
-          target.parent.removeChild(target);
-        } else if (dragTarget.parent.type == operatorTypes.mulcon && target.parent.type == operatorTypes.muldis && target.parent.ornaments.length === 0 && dragTarget.parent === target.parent.parent && !dragTarget.parent.underNegative()) {
-          dragTarget.parent.removeChild(dragTarget)
-          target.parent.removeChild(target);
-        } else */if (dragTarget.parent.type == operatorTypes.mulcon && dragTarget.parent === target.parent && !dragTarget.parent.underNegative()) {
-          var newOp = new LogicOperator(this);
-          var pos = target.fromRelativePos(0,0);
-          newOp.x = pos[0];
-          newOp.y = pos[1];
-          newOp.type = operatorTypes.muldis;
-          newOp.r = target.r;
-          target.parent.addChild(newOp);
-          dragTarget.parent.removeChild(dragTarget)
-          target.parent.removeChild(target);
-        }
-        
-      }
-    }
+    this.moveInterpreter.interpretDrag(this.mode, dragTarget, target, x, y);
   }
 }
 
@@ -1109,6 +1331,8 @@ canvas.on("mousedown", function(e) {
     root.onMousedown(e.clientX, e.clientY, ctx)
   }
 })
+
+
 
 canvas.on("mouseup", function(e) {
   root.mouseX = e.clientX;
