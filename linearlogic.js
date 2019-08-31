@@ -280,7 +280,7 @@ class LogicOrnament {
   underNegative() {
     var i = this.parent.ornaments.indexOf(this) + 1;
     for (; i<this.parent.ornaments.length; i++) {
-      if (this.parent.ornaments[i].type == operatorTypes.mulcon) {
+      if (this.parent.ornaments[i].type == operatorTypes.neg) {
         return true;
       }
     }
@@ -374,9 +374,6 @@ class LogicOperator {
   }
   
   toRelativePos(x, y) {
-    if (this.parent == this.root) {
-      return [x-this.x, y-this.y];
-    }
     var out = this.parent.toRelativePos(x, y)
     out[0] -= this.x;
     out[1] -= this.y;
@@ -783,7 +780,7 @@ class MoveInterpreter {
       if (dest.parent == src.parent && dest.type == dest.parent.type && dest.ornaments.length == 0 && !dest.underNegative()) {
         // Associative law
         this.performMove("transpose", src, dest, x, y);
-      } else if (src.parent.type === operatorTypes.mulcon && dest.parent.type === operatorTypes.muldis && dest.parent.ornaments.length === 0 && src.parent === dest.parent.parent && !dest.parent.underNegative()) {
+      } else if (src.parent && dest.parent && src.parent.type === operatorTypes.mulcon && dest.parent.type === operatorTypes.muldis && dest.parent.ornaments.length === 0 && src.parent === dest.parent.parent && !dest.parent.underNegative()) {
         // Insert rule (alternative to cut)
         this.performMove("insert", src, dest, x, y);
       } else if (src.parent === dest && !src.isOrnament && !dest.underNegative()) {
@@ -990,7 +987,7 @@ class MoveInterpreter {
         newOp.x = src.x;
         newOp.y = src.y;
         newOp.type = operatorTypes.negexp;
-        src.addOrnament(newOp);
+        src.addOrnament(newOp, 0);
         break;
       case "duplicate": // Copy src's parent to dest
         copy = src.copy(dest);
@@ -1082,6 +1079,14 @@ class LogicBoard {
   
   fromScreenPos(x,y) {
     return [(x-this.width/2)/this.scale+this.panX, (y-this.height/2)/this.scale+this.panY]
+  }
+  
+  toRelativePos(x,y) {
+    return [x,y];
+  }
+  
+  fromRelativePos(x,y) {
+    return [x,y];
   }
   
   addChild(ch) {
@@ -1220,7 +1225,11 @@ class LogicBoard {
       
       if (this.freeAdd.children.length == 0) {
         // No children: Pop
-        this.freeAdd.popOperator();
+        if (this.freeAdd.ornaments.length > 0) {
+          this.freeAdd.type = this.freeAdd.parent.type;
+        } else {
+          this.freeAdd.popOperator();
+        }
       } else if (this.freeAdd.children.length == 1) {
         // One child: Unwrap
         while (this.freeAdd.ornaments.length > 0) {
@@ -1235,6 +1244,8 @@ class LogicBoard {
       this.freeAdd = null;
       this.mirrorAdd = null;
     } else {
+      if (target.isOrnament && target.parent == this.freeAdd) return;
+      
       if (this.mode == "delete") {
         if (target !== this && target !== this.freeAdd) {
           // Delete
