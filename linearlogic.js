@@ -1226,7 +1226,8 @@ class LogicBoard {
       if (this.freeAdd.children.length == 0) {
         // No children: Pop
         if (this.freeAdd.ornaments.length > 0) {
-          this.freeAdd.type = this.freeAdd.parent.type;
+          // Hack to allow reversal of create rule
+          this.freeAdd.type = operatorTypes.muldis;
         } else {
           this.freeAdd.popOperator();
         }
