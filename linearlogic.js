@@ -2,7 +2,7 @@ var canvas = $("#canvas")
 
 var ctx = canvas[0].getContext("2d")
 
-var operatorTypes = {
+const operatorTypes = {
   label: {fill: "white", stroke: "black", basicOperator: true, text: "black", dual: "invlabel"},
   invlabel: {fill: "black", stroke: "white",basicOperator: true, text: "white", dual: "label"},
   free: {fill: "#cfc", stroke: "black", hasChildren: true,  text: "black", dashed: true},
@@ -16,7 +16,7 @@ var operatorTypes = {
   negexp: {isOrnament: true, fill: "blue", stroke: "#008", text: "white", label: "?", dual: "posexp"},
 }
 
-var oldTypes = [operatorTypes.label, operatorTypes.mulcon, operatorTypes.muldis, operatorTypes.addcon, operatorTypes.adddis, operatorTypes.neg, operatorTypes.posexp, operatorTypes.negexp, operatorTypes.free, operatorTypes.mirror]
+const oldTypes = [operatorTypes.label, operatorTypes.mulcon, operatorTypes.muldis, operatorTypes.addcon, operatorTypes.adddis, operatorTypes.neg, operatorTypes.posexp, operatorTypes.negexp, operatorTypes.free, operatorTypes.mirror]
 
 function doResize() {
   // Save width and height to ctx for easy access in draw functions
@@ -458,32 +458,57 @@ class LogicOperator {
   }
   
   // Returns true if this has exactly the same contents as other
-  // If neg is true, also requires a difference of exactly one negative
-  // ornament in the last slot
+  // If neg is true, requires matching the dual instead
+  // Negative ornaments are considered to be identical to the dual
   equals(other, neg) {
     // Can't match the base
     if (other === this.root) return false;
     // Can't match ornaments
     if (other.isOrnament) return false;
-    if (neg) {
-      if (Math.abs(this.ornaments.length-other.ornaments.length)!==1) return false;
-    } else {
-      if (this.ornaments.length !== other.ornaments.length) return false;
+    
+    // Ornaments must match (accounting for negatives)
+    let i1 = this.ornaments.length-1;
+    let i2 = other.ornaments.length-1;
+    
+    if (i1 >= 0 || i2 >= 0) {
+      while (this.ornaments[i1] && this.ornaments[i1].type == operatorTypes.neg) {
+        neg = !neg;
+        i1--;
+      }
+      while (other.ornaments[i2] && other.ornaments[i2].type == operatorTypes.neg) {
+        neg = !neg;
+        i2--;
+      }
+      
+      while (i1 >= 0 && i2 >= 0) {
+        let type1 = this.ornaments[i1].type;
+        let type2 = other.ornaments[i2].type;
+        
+        if (type1 == operatorTypes.neg || type2 == operatorTypes.neg) {
+          while (this.ornaments[i1] && this.ornaments[i1].type == operatorTypes.neg) {
+            neg = !neg;
+            i1--;
+          }
+          while (other.ornaments[i2] && other.ornaments[i2].type == operatorTypes.neg) {
+            neg = !neg;
+            i2--;
+          }
+        } else {
+          if (type1 !== (neg ? operatorTypes[type2.dual] : type2)) {
+            return false;
+          }
+          i1--;
+          i2--;
+        }
+      }
     }
+    
+    if (i1 !== i2) return false;
+    
+    // Type and label must match
     if (this.children.length !== other.children.length) return false;
     if (this.label != other.label) return false;
-    
-    // Ornaments must match exactly
-    var len = Math.min(this.ornaments.length, other.ornaments.length);
-    for (var i=0; i<len; i++) {
-      if (this.ornaments[i].type !== other.ornaments[i].type) return false;
-    }
-    
-    if (neg) {
-      // Check is last ornament is negative
-      if (this.ornaments[len+1] && this.ornaments[len+1].type !== operatorTypes.neg) return false;
-      if (other.ornaments[len+1] && other.ornaments[len+1].type !== operatorTypes.neg) return false;
-    }
+    if (this.type !== (neg ? operatorTypes[other.type.dual] : other.type)) return false;
     
     // Children must match in any order
     var unmatched = other.children.map(e=>e);
@@ -492,7 +517,7 @@ class LogicOperator {
       var matchFound = false;
       
       for (var k=0; k<unmatched.length; k++) {
-        if (this.children[i].equals(unmatched[k])) {
+        if (this.children[i].equals(unmatched[k], neg)) {
           unmatched.splice(k,1);
           matchFound = true;
           break;
@@ -655,6 +680,11 @@ class MoveInterpreter {
     if (mode == "delete") {
       // Delete
       
+      if (target.type == operatorTypes.neg) {
+        // Shortcut for fullnegate
+        this.performMove("fullnegate", target, null, x, y);
+      }
+      
       // Can't delete anything under a negative, or the base
       if (inNegative || target === this.root) return true;
       
@@ -674,6 +704,7 @@ class MoveInterpreter {
         let hasExp = true;
         
         if (target.i == 0) {
+          // Dig ? exponential
           // All children must have ? ornaments and parent must be muldis
           if (target.parent.type == operatorTypes.muldis) {
             for (let c of target.parent.children) {
@@ -691,7 +722,6 @@ class MoveInterpreter {
         }
         
         if (hasExp) {
-          // Dig ? exponential
           this.performMove("dig", target, null, x, y);
         }
       }
@@ -711,6 +741,7 @@ class MoveInterpreter {
           let hasExp = true;
           
           if (!target.isOrnament) {
+            // Bury ! exponential
             // All children must have ! ornaments and target must be mulcon
             if (target.type == operatorTypes.mulcon) {
               for (let c of target.children) {
@@ -728,7 +759,6 @@ class MoveInterpreter {
           }
           
           if (hasExp) {
-            // Dig ? exponential
             this.performMove("bury", target, null, x, y);
           }
         } else if (type === operatorTypes.negexp) {
@@ -788,7 +818,7 @@ class MoveInterpreter {
           // Additive conjunction copy
           this.performMove("copy", src, dest, x, y);
         } else if (src.parent.type == operatorTypes.mulcon && src.ornaments.length > 0 && src.ornaments[src.ornaments.length-1].type == operatorTypes.posexp) {
-          // Additive conjunction copy
+          // Positive exponential duplicate
           this.performMove("duplicate", src, dest, x, y);
         }
       } else if (src.parent === dest.parent && !src.isOrnament && !dest.isOrnament && !dest.parent.underNegative() && src.equals(dest)) {
@@ -927,6 +957,31 @@ class MoveInterpreter {
           other.type = operatorTypes[other.type.dual]
           src.parent.addOrnament(src,src.i-1)
         }
+        break;
+      case "fullnegate": // Delete src, turn everything after into its dual
+        function dualize(op, index) {
+          index = (index === undefined ? op.ornaments.length : index);
+          
+          // Dualize ornaments
+          for (let i=0; i<index; i++) {
+            let dual = op.ornaments[i].type.dual;
+            
+            if (dual) {
+              op.ornaments[i].type = operatorTypes[dual];
+            }
+          }
+          
+          // Dualize self
+          op.type = operatorTypes[op.type.dual];
+          
+          // Dualize children
+          for (let c of op.children) {
+            dualize(c);
+          }
+        }
+        
+        dualize(src.parent, src.parent.ornaments.indexOf(src));
+        src.parent.removeOrnament(src);
         break;
       case "doublenegate": // Create two neg ornaments on src
         index = 0;
