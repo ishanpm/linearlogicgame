@@ -19,12 +19,19 @@ const operatorTypes = {
 const oldTypes = [operatorTypes.label, operatorTypes.mulcon, operatorTypes.muldis, operatorTypes.addcon, operatorTypes.adddis, operatorTypes.neg, operatorTypes.posexp, operatorTypes.negexp, operatorTypes.free, operatorTypes.mirror]
 
 function doResize() {
-  // Save width and height to ctx for easy access in draw functions
-  ctx.width =canvas[0].width=$(window).width()
-  ctx.height=canvas[0].height=$(window).height()
+  var width = $(window).width()
+  var height = $(window).height()
   
-  root.width = ctx.width;
-  root.height = ctx.height;
+  // Canvas fills entire page
+  canvas[0].style.width = width;
+  canvas[0].style.height = height;
+  
+  // Actual size of canvas is in device pixels to look sharp
+  canvas[0].width = width * window.devicePixelRatio;
+  canvas[0].height = height * window.devicePixelRatio;
+  
+  root.width = width;
+  root.height = height;
 }
 $(window).on("resize",doResize)
 
@@ -46,9 +53,14 @@ ctx.fillCirc = function fillCirc(x, y, r) {
 class LogicToolbar {
   constructor(root) {
     this.root = root;
+    this.selection = 0;
     this.cursorx = 0;
     this.icons = [];
     this.iconTypes = [operatorTypes.label, operatorTypes.mulcon, operatorTypes.muldis, operatorTypes.addcon, operatorTypes.adddis, operatorTypes.neg, operatorTypes.posexp, operatorTypes.negexp];
+    this.currentFreeBuild = false;
+    this.toolLabels = ["Interact", "Pan", "Delete", "Add bubble", "Add times", "Add par", "Add with", "Add plus", "Add negate", "Add pos. exp.", "Add neg. exp."]
+    this.label = "hi foo bar";
+    
     var iconTypes = this.iconTypes;
     
     // Build icons
@@ -68,6 +80,8 @@ class LogicToolbar {
         this.icons[i].label = "a";
       }
     }
+    
+    this.refresh()
   }
   
   hitTest(x,y) {
@@ -91,21 +105,35 @@ class LogicToolbar {
       root.addType = x - 3;
       root.addLabel = "a";
     }
+    
+    this.refresh();
+  }
+  
+  refresh() {
+    this.icons[0].label = this.root.addLabel;
+    this.icons[0].labelWidth = null;
+    
+    this.label = this.toolLabels[this.selection]
   }
   
   tick() {
-    var selection = 0;
+    var newSelection = 0;
     if (root.mode == "action") {
-      selection = 0;
+      newSelection = 0;
     } else if (root.mode == "pan") {
-      selection = 1;
+      newSelection = 1;
     } else if (root.mode == "delete") {
-      selection = 2;
+      newSelection = 2;
     } else {
-      selection = 3 + root.addType;
+      newSelection = 3 + root.addType;
     }
     
-    this.cursorx += (selection - this.cursorx)/5
+    if (newSelection != this.selection) {
+      this.selection = newSelection;
+      this.refresh();
+    }
+    
+    this.cursorx += (this.selection - this.cursorx)/5
     
     // Tick icon operators
     for (var i=0; i<this.icons.length; i++) {
@@ -148,6 +176,20 @@ class LogicToolbar {
     ctx.beginPath();
     ctx.rect(this.cursorx*2,0,2,2)
     ctx.stroke()
+    
+    // Tool label
+    ctx.font = "0.8px sans-serif"
+    ctx.textAlign = "left"
+    let labelWidth = ctx.measureText(this.label).width
+    let labelLeft = Math.min(this.cursorx*2, 22 - (labelWidth+0.2))
+    
+    ctx.fillStyle = "black"
+    ctx.beginPath();
+    ctx.rect(labelLeft,2, labelWidth+0.2,1);
+    ctx.fill();
+    
+    ctx.fillStyle = "white"
+    ctx.fillText(this.label, labelLeft + 0.1, 2.5)
     
     ctx.restore()
   }
@@ -1193,6 +1235,9 @@ class LogicBoard {
   
   draw(ctx) {
     ctx.save()
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+    
+    ctx.save()
     
     ctx.fillStyle = "white"
     ctx.strokeStyle = "black"
@@ -1200,7 +1245,7 @@ class LogicBoard {
     ctx.fillRect(0,0,this.width,this.height)
     
     ctx.translate(this.width/2, this.height/2)
-    ctx.scale(this.scale,this.scale)
+    ctx.scale(this.scale, this.scale)
     ctx.translate(-this.panX, -this.panY)
     
     for (var i=0; i<this.children.length; i++) {
@@ -1210,6 +1255,7 @@ class LogicBoard {
     ctx.restore()
     
     this.toolbar.draw(ctx);
+    ctx.restore()
   }
   
   onMousedown(x, y, ctx) {
